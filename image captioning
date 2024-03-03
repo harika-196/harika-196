@@ -1,0 +1,87 @@
+import torch
+import torch.nn as nn
+from torchvision import models, transforms
+from PIL import Image
+from torch.autograd import Variable
+
+# Load pre-trained ResNet model
+resnet = models.resnet18(pretrained=True)
+resnet = nn.Sequential(*list(resnet.children())[:-1])  # Remove the last fully connected layer
+resnet.eval()
+
+# Define a simple LSTM-based captioning model
+class CaptioningModel(nn.Module):
+    def __init__(self, embedding_size, hidden_size, vocab_size):
+        super(CaptioningModel, self).__init__()
+        self.embedding = nn.Embedding(vocab_size, embedding_size)
+        self.lstm = nn.LSTM(embedding_size, hidden_size, batch_first=True)
+        self.fc = nn.Linear(hidden_size, vocab_size)
+
+    def forward(self, features, captions):
+        embeddings = self.embedding(captions)
+        inputs = torch.cat((features.unsqueeze(1), embeddings), 1)
+        lstm_out, _ = self.lstm(inputs)
+        outputs = self.fc(lstm_out)
+        return outputs
+
+# Image preprocessing
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+])
+
+# Load an image and preprocess it
+def load_and_preprocess_image(image_path):
+    image = Image.open(image_path)
+    image = transform(image).unsqueeze(0)
+    return image
+
+# Generate a caption for an image
+def generate_caption(image_path, model, vocab):
+    image = load_and_preprocess_image(image_path)
+    image_features = resnet(Variable(image))
+    image_features = image_features.view(image_features.size(0), -1)
+
+    # Sample caption using the trained model
+    sampled_caption = []
+    for _ in range(max_caption_length):
+        inputs = torch.tensor([vocab.word2idx[word] for word in sampled_caption]).unsqueeze(0)
+        outputs = model(image_features, inputs)
+        _, predicted_word_idx = torch.max(outputs, 2)
+        sampled_caption.append(vocab.idx2word[predicted_word_idx.item()])
+
+        if sampled_caption[-1] == '<end>':
+            break
+
+    generated_caption = ' '.join(sampled_caption[:-1])  # Exclude the '<end>' token
+    return generated_caption
+
+# Example usage
+image_path = 'path/to/your/image.jpg'  # Replace with the path to your image
+max_caption_length = 20  # Maximum length of the generated caption
+
+# Load your vocabulary (replace with your own implementation)
+class Vocabulary:
+    def __init__(self):
+        self.word2idx = {}  # Map word to index
+        self.idx2word = {}  # Map index to word
+        self.idx = 0
+
+    def add_word(self, word):
+        if word not in self.word2idx:
+            self.word2idx[word] = self.idx
+            self.idx2word[self.idx] = word
+            self.idx += 1
+
+# Initialize your model, vocabulary, and load weights (replace with your own implementation)
+embedding_size = 256
+hidden_size = 512
+vocab_size = len(vocab.word2idx)
+captioning_model = CaptioningModel(embedding_size, hidden_size, vocab_size)
+
+# Load pre-trained weights (replace with your own implementation)
+captioning_model.load_state_dict(torch.load('path/to/your/model_weights.pth'))
+
+# Generate caption
+generated_caption = generate_caption(image_path, captioning_model, vocab)
+print(f"Generated Caption: {generated_caption}")
